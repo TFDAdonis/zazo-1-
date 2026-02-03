@@ -6,9 +6,17 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+
+# Try to import Plotly with fallback
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("Plotly not installed. Some visualization features will be limited.")
+
 from datetime import datetime, timedelta
 import ee
 import traceback
@@ -195,7 +203,7 @@ st.markdown("""
         background: var(--card-black);
         color: var(--text-white);
         border: 1px solid var(--border-gray);
-        border-radius=8px;
+        border-radius: 8px;
         padding: 15px;
     }
     
@@ -229,7 +237,7 @@ st.markdown("""
     .info-panel {
         background: var(--card-black);
         border: 1px solid var(--border-gray);
-        border-radius=8px;
+        border-radius: 8px;
         padding: 15px;
         margin-top: 15px;
     }
@@ -1204,8 +1212,8 @@ with col2:
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Charts Section
-        if results:
+        # Charts Section (only if Plotly is available)
+        if results and PLOTLY_AVAILABLE:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
             
@@ -1301,6 +1309,11 @@ with col2:
                     except Exception as e:
                         st.error(f"Error creating chart for {index}: {str(e)}")
             st.markdown('</div>', unsafe_allow_html=True)
+        elif results and not PLOTLY_AVAILABLE:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
+            st.warning("⚠️ Plotly is not installed. Charts are disabled. Install with: `pip install plotly`")
+            st.markdown('</div>', unsafe_allow_html=True)
             
         # Export Section
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -1344,4 +1357,4 @@ st.markdown("""
         <span class="status-badge">Plotly</span>
     </div>
 </div>
-""", unsafe_allow_html=True)     
+""", unsafe_allow_html=True)
