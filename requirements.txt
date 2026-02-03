@@ -1,9 +1,6 @@
-pip install -r
+plotly>=5.17.0
 streamlit>=1.28.0
 pandas>=2.0.0
-matplotlib>=3.7.0
 folium>=0.14.0
 streamlit-folium>=0.15.0
-plotly>=5.17.0
 earthengine-api>=0.1.370
-google-cloud-storage>=2.0.0
