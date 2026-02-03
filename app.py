@@ -6,14 +6,20 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+
+# Try to import Plotly with fallback
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("Plotly not installed. Some visualization features will be limited.")
+
 from datetime import datetime, timedelta
 import ee
 import traceback
-import google_auth_oauthlib.flow
-from googleapiclient.discovery import build
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -197,7 +203,7 @@ st.markdown("""
         background: var(--card-black);
         color: var(--text-white);
         border: 1px solid var(--border-gray);
-        border-radius=8px;
+        border-radius: 8px;
         padding: 15px;
     }
     
@@ -231,7 +237,7 @@ st.markdown("""
     .info-panel {
         background: var(--card-black);
         border: 1px solid var(--border-gray);
-        border-radius=8px;
+        border-radius: 8px;
         padding: 15px;
         margin-top: 15px;
     }
@@ -287,58 +293,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== GOOGLE OAUTH CONFIGURATION ====================
-
-# Load Google OAuth secrets
-def load_google_config():
-    try:
-        if "web" in st.secrets:
-            client_config = dict(st.secrets["web"])
-        elif os.path.exists("client_secret.json"):
-            with open("client_secret.json", "r") as f:
-                client_config = json.load(f)["web"]
-        else:
-            return None
-        return client_config
-    except Exception:
-        if os.path.exists("client_secret.json"):
-            with open("client_secret.json", "r") as f:
-                return json.load(f)["web"]
-        return None
-
-GOOGLE_SCOPES = [
-    'https://www.googleapis.com/auth/userinfo.email', 
-    'https://www.googleapis.com/auth/userinfo.profile', 
-    'openid'
-]
-
-def create_google_flow(client_config):
-    if "redirect_uris" in client_config and isinstance(client_config["redirect_uris"], str):
-        client_config["redirect_uris"] = [client_config["redirect_uris"]]
-    
-    flow = google_auth_oauthlib.flow.Flow.from_client_config(
-        {"web": client_config},
-        scopes=GOOGLE_SCOPES,
-        redirect_uri=client_config["redirect_uris"][0]
-    )
-    return flow
-
-# Initialize session state for Google auth
-if "google_credentials" not in st.session_state:
-    st.session_state.google_credentials = None
-if "google_user_info" not in st.session_state:
-    st.session_state.google_user_info = None
-
-# Page configuration
-st.set_page_config(
-    page_title="Khisba GIS - 3D Global Vegetation Analysis",
-    page_icon="🌍",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# ==================== EARTH ENGINE INITIALIZATION ====================
-
+# Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
@@ -418,34 +373,16 @@ if 'selected_coordinates' not in st.session_state:
 if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
 
-# ==================== GOOGLE AUTHENTICATION CHECK ====================
+# Page configuration
+st.set_page_config(
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-google_config = load_google_config()
-
-# Handle OAuth callback
-code = st.query_params.get("code")
-if code and not st.session_state.google_credentials and google_config:
-    with st.spinner("Authenticating with Google..."):
-        try:
-            flow = create_google_flow(google_config)
-            flow.fetch_token(code=code)
-            credentials = flow.credentials
-            st.session_state.google_credentials = credentials
-            
-            # Get user info
-            service = build('oauth2', 'v2', credentials=credentials)
-            user_info = service.userinfo().get().execute()
-            st.session_state.google_user_info = user_info
-            st.session_state.authenticated = True
-            
-            st.query_params.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Authentication failed: {e}")
-            st.query_params.clear()
-
-# Show login page if not authenticated
-if not st.session_state.google_credentials:
+# Authentication check
+if not st.session_state.authenticated:
     st.markdown("""
     <div class="main-container">
         <div class="content-container" style="max-width: 500px; margin: 100px auto;">
@@ -453,8 +390,8 @@ if not st.session_state.google_credentials:
                 <h1 style="text-align: center; margin-bottom: 10px;">🌍 KHISBA GIS</h1>
                 <p style="text-align: center; color: #999999; margin-bottom: 30px;">3D Global Vegetation Analytics</p>
                 
-                <div style="text-align: center; padding: 20px;">
-                    <p style="color: #00ff88; font-weight: 600; margin-bottom: 20px;">Sign in with Google to access the platform</p>
+                <div class="alert alert-warning" style="text-align: center;">
+                    🔐 Authentication Required
                 </div>
             </div>
         </div>
@@ -463,72 +400,43 @@ if not st.session_state.google_credentials:
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if google_config:
-            try:
-                flow = create_google_flow(google_config)
-                auth_url, _ = flow.authorization_url(prompt='consent')
-                st.link_button("🔓 Login with Google", auth_url, type="primary", use_container_width=True)
-                
-                st.markdown(f"""
-                <div class="card" style="margin-top: 20px;">
-                    <p style="text-align: center; color: #666666; font-size: 12px;">
-                        Configured redirect: <code>{google_config['redirect_uris'][0]}</code>
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error creating auth flow: {e}")
-        else:
-            st.error("Google OAuth configuration not found")
+        password = st.text_input("", type="password", placeholder="Enter admin password", label_visibility="collapsed")
+        
+        if st.button("🔓 Sign In", type="primary", use_container_width=True):
+            if password == "admin":
+                st.session_state.authenticated = True
+                st.success("✅ Authentication successful!")
+                st.rerun()
+            else:
+                st.error("❌ Invalid password")
+    
+    st.markdown("""
+    <div class="main-container">
+        <div class="content-container" style="max-width: 500px; margin: 30px auto;">
+            <div class="card">
+                <p style="text-align: center; color: #00ff88; font-weight: 600; margin-bottom: 10px;">Demo Access</p>
+                <p style="text-align: center; color: #999999;">Use <strong>admin</strong> / <strong>admin</strong> for demo</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.stop()
 
-# Main application starts here - only accessible after Google auth
-
-# Get user info for display
-user_info = st.session_state.google_user_info
-
 # Main Dashboard Layout
-st.markdown(f"""
+st.markdown("""
 <div class="compact-header">
     <div>
         <h1>🌍 KHISBA GIS</h1>
         <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center;">
-        <div class="user-badge" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 20px; font-size: 12px; color: #00ff88;">
-            <img src="{user_info.get('picture', '')}" style="width: 24px; height: 24px; border-radius: 50%;" alt="Profile">
-            <span>{user_info.get('name', 'User')}</span>
-        </div>
+    <div style="display: flex; gap: 10px;">
         <span class="status-badge">Connected</span>
         <span class="status-badge">3D Mapbox Globe</span>
         <span class="status-badge">v2.0</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-# Logout button
-with st.sidebar:
-    st.markdown(f"""
-    <div class="card">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-            <img src="{user_info.get('picture', '')}" style="width: 40px; height: 40px; border-radius: 50%;">
-            <div>
-                <p style="margin: 0; font-weight: 600; color: #fff;">{user_info.get('name', 'User')}</p>
-                <p style="margin: 0; font-size: 12px; color: #999;">{user_info.get('email', '')}</p>
-            </div>
-        </div>
-        <button onclick="window.location.href='?logout=true'" style="width: 100%; background: linear-gradient(90deg, #ff4444, #cc0000); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer;">🚪 Logout</button>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Handle logout
-    if st.query_params.get("logout"):
-        st.session_state.google_credentials = None
-        st.session_state.google_user_info = None
-        st.session_state.authenticated = False
-        st.query_params.clear()
-        st.rerun()
 
 # Helper Functions for Earth Engine
 def get_admin_boundaries(level, country_code=None, admin1_code=None):
@@ -1304,8 +1212,8 @@ with col2:
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Charts Section
-        if results:
+        # Charts Section (only if Plotly is available)
+        if results and PLOTLY_AVAILABLE:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
             
@@ -1401,6 +1309,11 @@ with col2:
                     except Exception as e:
                         st.error(f"Error creating chart for {index}: {str(e)}")
             st.markdown('</div>', unsafe_allow_html=True)
+        elif results and not PLOTLY_AVAILABLE:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
+            st.warning("⚠️ Plotly is not installed. Charts are disabled. Install with: `pip install plotly`")
+            st.markdown('</div>', unsafe_allow_html=True)
             
         # Export Section
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -1441,7 +1354,7 @@ st.markdown("""
         <span class="status-badge">3D Mapbox</span>
         <span class="status-badge">Earth Engine</span>
         <span class="status-badge">Streamlit</span>
-        <span class="status-badge">Google Auth</span>
+        <span class="status-badge">Plotly</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
